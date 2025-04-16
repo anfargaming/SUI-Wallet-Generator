@@ -1,5 +1,4 @@
 import { Ed25519Keypair } from "@mysten/sui.js/keypairs/ed25519";
-import { toB64 } from "@mysten/bcs";
 import { bech32 } from "@scure/base";
 import fs from "fs/promises";
 import chalk from "chalk";
@@ -102,7 +101,7 @@ function encodeSuiPrivateKey(secretKeyBytes) {
 // Function to create a new wallet
 function createNewWallet(index) {
   const keypair = new Ed25519Keypair();
-  const privateKey = encodeSuiPrivateKey(keypair.getSecretKey()); // Encode to SUI private key format
+  const privateKey = encodeSuiPrivateKey(keypair._secretKey); // Use _secretKey to access the private key directly
   return {
     index: index + 1,
     address: keypair.getPublicKey().toSuiAddress(),
