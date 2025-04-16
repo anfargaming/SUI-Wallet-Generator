@@ -119,7 +119,7 @@ async function main() {
         `Address: ${w.address}\n` +
         `Private Key: ${w.privateKey}\n` +
         `Mnemonic: ${w.mnemonic}\n` +
-        "=".repeat(40) + "\n";
+        "=".repeat(40) + "\n"
       },
     };
 
