@@ -1,0 +1,19 @@
+{
+  "name": "sui-wallet-generator",
+  "version": "1.0.0",
+  "description": "Terminal-based SUI wallet generator with Ed25519 support",
+  "type": "module",
+  "main": "sui-wallet-generator.js",
+  "scripts": {
+    "start": "node sui-wallet-generator.js"
+  },
+  "dependencies": {
+    "@mysten/sui.js": "^0.39.0",
+    "bip39": "^3.0.4",
+    "chalk": "^5.3.0",
+    "ed25519-hd-key": "^1.0.1",
+    "figlet": "^1.6.0",
+    "inquirer": "^9.2.16",
+    "ora": "^6.3.1"
+  }
+}
