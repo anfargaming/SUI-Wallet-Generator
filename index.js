@@ -1,20 +1,13 @@
-import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
-import { generateMnemonic, mnemonicToSeedSync } from 'bip39';
-import { derivePath } from 'ed25519-hd-key';
-import fs from 'fs/promises';
-import chalk from 'chalk';
-import ora from 'ora';
-import figlet from 'figlet';
-import inquirer from 'inquirer';
+import { Ed25519Keypair, encodeSuiPrivateKey } from "@mysten/sui.js/keypairs/ed25519";
+import { mnemonicToSeedSync, generateMnemonic } from "bip39";
+import { derivePath } from "ed25519-hd-key";
+import chalk from "chalk";
+import ora from "ora";
+import figlet from "figlet";
+import inquirer from "inquirer";
+import fs from "fs/promises";
 
 const SUI_DERIVATION_PATH = "m/44'/784'/0'/0'/0'";
-
-const FILES = {
-  ADDRESSES: 'wallet_addresses.txt',
-  MNEMONICS: 'wallet_mnemonics.txt',
-  PRIVATE_KEYS: 'wallet_private_keys.txt',
-  DETAILS: 'wallet_details.txt',
-};
 
 const log = {
   info: (...args) => console.log("\n" + chalk.blueBright("[INFO]"), ...args, "\n"),
@@ -23,26 +16,17 @@ const log = {
   warn: (...args) => console.log("\n" + chalk.yellowBright("[WARNING]"), ...args, "\n"),
 };
 
+const FILES = {
+  ADDRESSES: "sui_addresses.txt",
+  PRIVATE_KEYS: "sui_private_keys.txt",
+  MNEMONICS: "sui_mnemonics.txt",
+  DETAILS: "sui_wallet_details.txt",
+};
+
 function showBanner() {
   console.clear();
   console.log("\n" + chalk.magentaBright(figlet.textSync("SUI Wallets", { horizontalLayout: "full" })));
-  console.log(chalk.cyanBright("\n🔐 Secure Ed25519 Wallet Generator for SUI 🔐\n"));
-}
-
-function generateWallet(index) {
-  const mnemonic = generateMnemonic();
-  const seed = mnemonicToSeedSync(mnemonic);
-  const derived = derivePath(SUI_DERIVATION_PATH, seed.toString('hex'));
-  const keypair = Ed25519Keypair.fromSecretKey(Buffer.from(derived.key));
-  const privateKey = Buffer.from(derived.key).toString('hex');
-  const address = keypair.toSuiAddress();
-
-  return {
-    index: index + 1,
-    address,
-    mnemonic,
-    privateKey,
-  };
+  console.log(chalk.cyanBright("\n⚡ Generate SUI-Compatible Ed25519 Wallets ⚡\n"));
 }
 
 async function getUserInput() {
@@ -50,95 +34,139 @@ async function getUserInput() {
     {
       type: "number",
       name: "walletCount",
-      message: "🔢 How many wallets to generate?",
-      validate: (value) => value > 0 ? true : "Enter a number greater than 0",
+      message: "🔢 Enter number of SUI wallets to generate:",
+      validate: (value) => value > 0 ? true : "Please enter a positive number.",
     },
   ]);
   return walletCount;
 }
 
 async function getOutputPreferences() {
-  const { outputOptions } = await inquirer.prompt([
+  console.log(chalk.magentaBright("\n📂 Choose the output options:\n"));
+  console.log(chalk.bgRedBright.bold(" 0. 🛑 Exit 🛑 "));
+  console.log(chalk.yellowBright(" 1. Wallet Addresses Only"));
+  console.log(chalk.yellowBright(" 2. Wallet Private Keys Only"));
+  console.log(chalk.yellowBright(" 3. Wallet Mnemonics Only"));
+  console.log(chalk.greenBright(" 4. All Wallet Details (Recommended)\n"));
+
+  const { outputSelection } = await inquirer.prompt([
     {
-      type: "checkbox",
-      name: "outputOptions",
-      message: "📂 What do you want to export?",
-      choices: [
-        { name: "Addresses", value: "address" },
-        { name: "Mnemonics", value: "mnemonic" },
-        { name: "Private Keys", value: "privateKey" },
-        { name: "Full Details", value: "details" },
-      ],
+      type: "input",
+      name: "outputSelection",
+      message: "📌 Enter the number(s) separated by commas (e.g., 1,3,4):",
+      validate: (input) => input.match(/^([0-4],?)+$/) ? true : "Invalid input! Enter numbers 0-4 separated by commas.",
     },
   ]);
-  return outputOptions;
+
+  if (outputSelection.includes("0")) {
+    log.info("Exiting...");
+    process.exit(0);
+  }
+
+  return outputSelection.split(",").map(Number);
 }
 
-async function saveToFile(path, data) {
+function generateWallet(index) {
+  const mnemonic = generateMnemonic();
+  const seed = mnemonicToSeedSync(mnemonic);
+  const derived = derivePath(SUI_DERIVATION_PATH, seed.toString("hex"));
+  const keypair = Ed25519Keypair.fromSecretKey(Buffer.from(derived.key));
+  const address = keypair.toSuiAddress();
+
+  // Encode to SUI format
+  const suiPrivateKey = encodeSuiPrivateKey({
+    schema: "ED25519",
+    privateKey: keypair.getSecretKey(),
+  });
+
+  return {
+    index: index + 1,
+    address,
+    mnemonic,
+    privateKey: suiPrivateKey,
+  };
+}
+
+async function saveToFile(filePath, data) {
   try {
-    await fs.appendFile(path, data + "\n", "utf8");
-  } catch {
-    await fs.writeFile(path, data + "\n", "utf8");
+    try {
+      await fs.access(filePath);
+      await fs.appendFile(filePath, data + "\n");
+    } catch {
+      await fs.writeFile(filePath, data + "\n");
+    }
+    return true;
+  } catch (error) {
+    log.error(`⚠️ Failed to save data to ${filePath}:`, error.message);
+    return false;
   }
 }
 
 async function main() {
   try {
     showBanner();
+    log.info("🔐 SUI Ed25519 Wallet Generator Initialized...");
+
     const walletCount = await getUserInput();
-    const selections = await getOutputPreferences();
+    const selectedOptions = await getOutputPreferences();
 
-    const spinner = ora("🔄 Generating wallets...").start();
-    const summary = [];
+    const optionsMap = {
+      1: { key: "ADDRESSES", data: (w) => w.address },
+      2: { key: "PRIVATE_KEYS", data: (w) => w.privateKey },
+      3: { key: "MNEMONICS", data: (w) => w.mnemonic },
+      4: { key: "DETAILS", data: (w) =>
+        `${w.index}. Wallet ${w.index}\n` +
+        `Address: ${w.address}\n` +
+        `Private Key: ${w.privateKey}\n` +
+        `Mnemonic: ${w.mnemonic}\n` +
+        "=".repeat(40) + "\n`
+      },
+    };
 
+    log.info(`📜 Generating ${walletCount} wallets...\n`);
+    const spinner = ora({ text: "🔄 Generating wallets...", color: "cyan" }).start();
+
+    const walletData = [];
     const createdFiles = new Set();
 
     for (let i = 0; i < walletCount; i++) {
       const wallet = generateWallet(i);
-      summary.push({
+
+      for (const option of selectedOptions) {
+        const config = optionsMap[option];
+        if (config) {
+          const filePath = FILES[config.key];
+          const success = await saveToFile(filePath, config.data(wallet));
+          if (success) createdFiles.add(filePath);
+        }
+      }
+
+      walletData.push({
         "#": wallet.index,
-        Address: wallet.address,
-        Mnemonic: wallet.mnemonic.split(" ").slice(0, 2).join(" ") + "...",
-        "Private Key": wallet.privateKey.slice(0, 8) + "...",
+        "Address": wallet.address,
+        "Private Key": wallet.privateKey.slice(0, 16) + "...",
+        "Mnemonic": wallet.mnemonic.split(" ").slice(0, 2).join(" ") + "...",
       });
-
-      if (selections.includes("address")) {
-        await saveToFile(FILES.ADDRESSES, wallet.address);
-        createdFiles.add(FILES.ADDRESSES);
-      }
-      if (selections.includes("mnemonic")) {
-        await saveToFile(FILES.MNEMONICS, wallet.mnemonic);
-        createdFiles.add(FILES.MNEMONICS);
-      }
-      if (selections.includes("privateKey")) {
-        await saveToFile(FILES.PRIVATE_KEYS, wallet.privateKey);
-        createdFiles.add(FILES.PRIVATE_KEYS);
-      }
-      if (selections.includes("details")) {
-        await saveToFile(FILES.DETAILS,
-          `Wallet ${wallet.index}\nAddress: ${wallet.address}\nMnemonic: ${wallet.mnemonic}\nPrivate Key: ${wallet.privateKey}\n${"=".repeat(40)}`
-        );
-        createdFiles.add(FILES.DETAILS);
-      }
     }
 
-    spinner.succeed("✅ Wallets generated successfully!\n");
-    console.log(chalk.cyanBright("📊 Wallet Summary:"));
-    console.table(summary);
+    spinner.succeed(`✅ Successfully generated ${walletCount} SUI wallets!\n`);
 
-    if (createdFiles.size) {
-      console.log(chalk.greenBright("\n📁 Files saved:"));
-      for (const file of createdFiles) {
-        console.log(chalk.magenta(`✔ ${file}`));
-      }
-    } else {
-      console.log(chalk.yellow("\n⚠️ No files were created. You didn't select any output."));
+    console.log(chalk.magentaBright("\n📊 Wallet Summary:"));
+    console.table(walletData);
+
+    if (createdFiles.size > 0) {
+      console.log(chalk.greenBright("\n📁 Files Created:"));
+      Array.from(createdFiles).forEach(file => {
+        console.log(chalk.magentaBright(`✔ ${file}`));
+      });
     }
 
-    console.log(chalk.yellowBright("\n🔒 Make sure to store your keys and mnemonics safely!\n"));
+    console.log(chalk.yellowBright("\n⚠️ Backup your private keys and mnemonics securely!"));
+    console.log(chalk.greenBright("\n🎉 Wallets Generated Successfully!\n"));
 
-  } catch (err) {
-    log.error("Unexpected error:", err.message);
+  } catch (error) {
+    log.error("Fatal error:", error);
+    process.exit(1);
   }
 }
 
